@@ -1,16 +1,8 @@
-import LetterRow from "components/LetterRow";
+import Ball from "components/Ball";
+import Player from "components/Player";
 import Logos from "components/atoms/logos";
-import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import {
-  interval,
-  fromEvent,
-  map,
-  tap,
-  combineLatest,
-  startWith,
-  takeUntil,
-  Subject,
-} from "rxjs";
+import { KeyboardEvent, useEffect, useState } from "react";
+import { fromEvent, map } from "rxjs";
 
 function padStartStr(
   str: string | number,
@@ -22,31 +14,77 @@ function padStartStr(
 
 export interface GameConfig {
   boardWidth: number;
-  withPerElement: number;
-  minLetterPerRow: number;
-  maxLetterPerRow: number;
-  letterSpeed: number;
+  widthPerElement: number;
+  playerWidth: number;
 }
 
-export interface Letter {
-  letter: string;
-  position: number;
-  color: string;
+export interface Coor {
+  x: number;
+  y: number;
 }
 
-export interface Letters {
-  items: Letter[];
-  id: string;
-}
-
-const randomLetter = () =>
-  String.fromCharCode(
-    Math.random() * ("z".charCodeAt(0) - "a".charCodeAt(0)) + "a".charCodeAt(0)
-  );
+const gameConfig: GameConfig = {
+  boardWidth: 20,
+  widthPerElement: 24,
+  playerWidth: 3,
+};
 
 function App() {
   // states
-  const [letters, setSetters] = useState<Letters[]>([]);
+  const [playerCoors, setPlayerCoors] = useState<Coor>({
+    x: Math.floor((gameConfig.boardWidth - gameConfig.playerWidth) / 2) + 1,
+    y: 1,
+  });
+
+  // observables
+  const keyboardEvents$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
+    map((event) => event.key)
+  );
+
+  // subjects
+
+  // subscribe events
+  const subscribeKeyboardEvents = () => {
+    return keyboardEvents$.subscribe({
+      next(key) {
+        switch (key) {
+          case "ArrowLeft":
+            setPlayerCoors((prev) => {
+              if (prev.x <= 1) {
+                return prev;
+              }
+
+              return { ...prev, x: prev.x - 1 };
+            });
+            break;
+          case "ArrowRight":
+            setPlayerCoors((prev) => {
+              if (
+                prev.x >=
+                gameConfig.boardWidth - gameConfig.playerWidth + 1
+              ) {
+                return prev;
+              }
+
+              return { ...prev, x: prev.x + 1 };
+            });
+            break;
+
+          default:
+            break;
+        }
+      },
+    });
+  };
+
+  // use effects
+  useEffect(() => {
+    const keyboardSubscriber = subscribeKeyboardEvents();
+
+    return () => {
+      keyboardSubscriber.unsubscribe();
+    };
+  }, []);
 
   const currentDate = `${padStartStr(
     new Date().getDate(),
@@ -58,104 +96,11 @@ function App() {
     "0"
   )}-${new Date().getFullYear()}`;
 
-  const gameConfig: GameConfig = {
-    boardWidth: 16,
-    withPerElement: 32,
-    minLetterPerRow: 1,
-    maxLetterPerRow: 3,
-    letterSpeed: 400,
+  const containerWidth = gameConfig.boardWidth * gameConfig.widthPerElement;
+  const initBallCoors = {
+    x: Math.floor(gameConfig.boardWidth / 2),
+    y: 2,
   };
-  const containerWidth = gameConfig.boardWidth * gameConfig.withPerElement;
-
-  const gameOverSubject = useRef(new Subject<void>());
-  const intervals$ = useRef(
-    interval(gameConfig.letterSpeed).pipe(
-      map<number, Letters>(() => {
-        const newRowCharCnt =
-          gameConfig.minLetterPerRow +
-          Math.ceil(
-            Math.random() *
-              (gameConfig.maxLetterPerRow - gameConfig.minLetterPerRow)
-          );
-
-        const letters: Letter[] = [];
-
-        while (letters.length < newRowCharCnt) {
-          const letter = randomLetter();
-          const position = Math.ceil(Math.random() * gameConfig.boardWidth);
-
-          if (
-            letters.some((l) => l.position === position || l.letter === letter)
-          ) {
-            continue;
-          }
-
-          letters.push({
-            letter,
-            position,
-            color: "bg-teal-500",
-          });
-        }
-
-        return {
-          items: letters,
-          id: new Date().getTime().toString(),
-        };
-      }),
-      tap((letters) => {
-        setSetters((prev) => [letters, ...prev]);
-      })
-    )
-  );
-  const keyBoards$ = useRef(
-    fromEvent<KeyboardEvent | { key: string }>(document, "keydown").pipe(
-      startWith({ key: "" }),
-      map((event) => event.key),
-      tap((key) => console.log(`User click ===> ${key}`)),
-      tap((key) => {
-        setSetters((prev) => {
-          let lastRow = prev.at(-1);
-          if (!lastRow) return prev;
-
-          const cloned = JSON.parse(JSON.stringify(prev));
-          cloned.pop();
-
-          lastRow = {
-            ...lastRow,
-            items: lastRow.items.filter((l) => l.letter !== key),
-          };
-
-          if (lastRow.items.length) {
-            cloned.push(lastRow);
-          }
-
-          return cloned;
-        });
-      })
-    )
-  );
-  const games$ = useRef(
-    combineLatest([intervals$.current, keyBoards$.current]).pipe(
-      takeUntil(gameOverSubject.current)
-    )
-  );
-
-  useEffect(() => {
-    const gameSubscriber = games$.current.subscribe(console.log);
-
-    return () => {
-      gameSubscriber.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    console.log("letters change ===> ", letters);
-
-    if (letters.length >= gameConfig.boardWidth) {
-      gameOverSubject.current.next();
-      alert("Game over");
-    }
-  }, [letters]);
 
   return (
     <main>
@@ -200,8 +145,8 @@ function App() {
                       <div
                         key={index}
                         style={{
-                          width: gameConfig.withPerElement,
-                          height: gameConfig.withPerElement,
+                          width: gameConfig.widthPerElement,
+                          height: gameConfig.widthPerElement,
                         }}
                         className={`${bgColor}`}
                       ></div>
@@ -209,7 +154,17 @@ function App() {
                   })}
               </div>
 
-              <div className="w-full h-full relative z-1">
+              <div className="w-full h-full relative z-10 flex flex-col justify-between">
+                <div>Bricks</div>
+                <Player coor={playerCoors} gameConfig={gameConfig} />
+              </div>
+
+              <Ball
+                gameConfig={gameConfig}
+                initialCoors={initBallCoors}
+                playerCoors={playerCoors}
+              />
+              {/* <div className="w-full h-full relative z-1">
                 {letters.map((row) => {
                   return (
                     <LetterRow
@@ -219,7 +174,7 @@ function App() {
                     />
                   );
                 })}
-              </div>
+              </div> */}
             </div>
           </div>
         </section>
